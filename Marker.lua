@@ -269,11 +269,14 @@ end
 function Marker:PinLayer(wm)
     if self.layer then return self.layer end
     local sc = wm.ScrollContainer
-    -- Laid over the part that draws the map, under the zoom overlay. It
-    -- takes no mouse itself; only the pin does.
+    -- Laid over the part that draws the map, above the map's pins (the
+    -- explored areas a zone draws over its art are pins too, and would
+    -- cover it) and under the zoom overlay. It takes no mouse itself; only
+    -- the pin does.
     local layer = CreateFrame("Frame", nil, wm)
     layer:SetAllPoints(sc)
-    layer:SetFrameLevel(math.min(sc:GetFrameLevel() + 1000, 8800))
+    local _, top = ns.PinLevels(wm)
+    layer:SetFrameLevel(math.min(top + 10, 9400))
     layer:EnableMouse(false)
     layer:SetClipsChildren(true)
     layer:Hide()

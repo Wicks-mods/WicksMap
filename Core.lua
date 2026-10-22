@@ -57,7 +57,10 @@ local A = Core:NewAddon(ADDON, {
         -- one character's.
         global = {
             wheel      = true,   -- the wheel moves between map levels
+            anchor     = true,   -- glide each zoom step, keeping one spot in place
+            onPlayer   = true,   -- that spot is you when the cursor is over where you are
             animate    = true,   -- zoom between levels rather than cut
+            terrain    = true,   -- the minimap's terrain past the painted map's detail
             rightClick = true,   -- right-click drops a marker
             arrow      = true,   -- the arrow to our own marker
             autoClear  = true,   -- take the marker away on arrival
@@ -110,6 +113,22 @@ function ns.CanvasRect(frame)
     return { x = (l * cs - fl * fs) / fs, y = (ft * fs - t * cs) / fs, w = w, h = h }
 end
 
+-- The frame levels the map's pins use. They are fixed numbers from 2000
+-- up (MapCanvas_PinFrameLevelsManager), not relative to the map: the
+-- explored areas a zone draws over its art are the lowest, and every icon
+-- sits above them. Our layers are placed against these, read once.
+function ns.PinLevels(wm)
+    local explore, top = 2001, 3000
+    local mgr = wm and wm.GetPinFrameLevelsManager and wm:GetPinFrameLevelsManager()
+    if type(mgr) == "table" then
+        local ok, v = pcall(mgr.GetValidFrameLevel, mgr, "PIN_FRAME_LEVEL_MAP_EXPLORATION")
+        if ok and type(v) == "number" then explore = v end
+        local m = rawget(mgr, "maxLevel")
+        if type(m) == "number" then top = m end
+    end
+    return explore, top
+end
+
 -- Whether the wheel may change the map now. Changing it is a call into
 -- the game's map code from ours, and on a client with secret values that
 -- leaves their map code running in our taint until it next changes on its
@@ -158,6 +177,7 @@ function ns:Attach()
     if not wm then return end
     self.attached = true
     if ns.Zoom then Core.safe(ns.Zoom.Attach, ns.Zoom, wm) end
+    if ns.Terrain then Core.safe(ns.Terrain.Attach, ns.Terrain, wm) end
     if ns.Marker then Core.safe(ns.Marker.Attach, ns.Marker, wm) end
 end
 
@@ -245,7 +265,13 @@ function A:OnEnable()
         local y = O:Heading(page, "Scrolling", 0)
         y = check("Scroll the world map to move between levels", "wheel", y)
         y = O:Note(page, "Scroll in over a continent to open it, and in again over a zone to open that. Scroll out to go back up. Where the game lets a map zoom, it zooms all the way first.", y)
+        y = check("Glide the zoom", "anchor", y)
+        y = O:Note(page, "Each step glides instead of jumping, with one spot held still, and a new level opens zoomed so that spot stays put. Off, the game's own jumps are left as they are and each level opens whole.", y)
+        y = check("Zoom in on yourself", "onPlayer", y)
+        y = O:Note(page, "With the cursor over the part of the map you are in (your continent, your zone), the zoom closes in on you and brings you toward the middle. Point anywhere else, or hold Shift, and it zooms where the cursor is.", y)
         y = check("Zoom between levels instead of cutting", "animate", y)
+        y = check("Show the terrain when zoomed in close", "terrain", y, function() ns.Terrain:Refresh() end)
+        y = O:Note(page, "Zoomed in on a zone, the minimap's terrain fades in under the map's pins, and the wheel goes on past the game's closest zoom. It shows the ground as it is, explored or not.", y)
         if Core.Client and Core.Client.hasSecrets then
             y = O:Note(page, "During a fight the wheel does what it always did. The map changes again once you are out of combat.", y)
         end

@@ -11,5 +11,7 @@
 ## X-WickCore: WickCore-1.0
 
 Core.lua
+Tiles.lua
 Zoom.lua
+Terrain.lua
 Marker.lua
