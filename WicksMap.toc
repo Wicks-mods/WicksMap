@@ -1,0 +1,15 @@
+## Interface: 20505, 20506, 16001
+## Title: Wick's Map
+## Notes: Scroll the world map from the world to a continent to a zone, and right-click to drop a waypoint.
+## Author: Wick
+## Version: 0.1.0
+## OptionalDeps: WickCore
+## SavedVariables: WicksMapDB
+## IconTexture: Interface\Icons\INV_Misc_Map_01
+## X-Website: https://wicksmods.com
+## X-License: MIT with trademark carve-out
+## X-WickCore: WickCore-1.0
+
+Core.lua
+Zoom.lua
+Marker.lua
