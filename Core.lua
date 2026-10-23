@@ -3,12 +3,12 @@
 -- files share, the slash command, the launcher and the options page.
 --
 -- Wick's Map does not draw a map of its own. It teaches the game's world
--- map two things: the mouse wheel moves between levels (the world, a
--- continent, a zone, a city), with a short zoom between them, and a
--- right-click drops a marker where the cursor is. Zoom.lua does the first
--- and Marker.lua the second.
+-- map a few things: the mouse wheel moves between levels (the world, a
+-- continent, a zone, a city) with a glide between them (Zoom.lua), the
+-- ground itself shows close in (Terrain.lua), and a right-click offers
+-- pins of your own (Pins.lua) and a waypoint (Marker.lua).
 --
--- One rule runs through both files: nothing of ours is ever written into
+-- One rule runs through all of them: nothing of ours is ever written into
 -- the game's map tables. On Forever a value of ours in their table taints
 -- everything of theirs that reads it. So the map is read (where the canvas
 -- sits, how far it is zoomed) and drawn over by frames of our own, the
@@ -61,10 +61,13 @@ local A = Core:NewAddon(ADDON, {
             onPlayer   = true,   -- that spot is you when the cursor is over where you are
             animate    = true,   -- zoom between levels rather than cut
             terrain    = true,   -- the minimap's terrain past the painted map's detail
-            rightClick = true,   -- right-click drops a marker
+            rightClick = true,   -- right-click opens the pin and waypoint menu
             arrow      = true,   -- the arrow to our own marker
             autoClear  = true,   -- take the marker away on arrival
             arrowWin   = {},     -- where the arrow window sits
+            pins       = {},     -- your pins: { id, mapID, x, y, title, icon, note }
+            nextPin    = 1,
+            continentPins = true, -- show pins on continent maps too
             -- marker = { mapID, x, y } while one of our own is down
         },
     },
@@ -162,6 +165,37 @@ function ns.MapPos(cont, pos, mapID)
     if ok and mp then return mp:GetXY() end
 end
 
+-- The same spot on a map one level down. The world map has no world
+-- position of its own (it spans continents), so where that fails the
+-- child's place on the parent says where the spot falls.
+local function down(mapID, childID, x, y)
+    local cont, pos = ns.WorldPos(mapID, x, y)
+    local cx, cy = ns.MapPos(cont, pos, childID)
+    if cx then return cx, cy end
+    local ok, minX, maxX, minY, maxY = pcall(C_Map.GetMapRectOnMap, childID, mapID)
+    if ok and minX and maxX > minX and maxY > minY then
+        return (x - minX) / (maxX - minX), (y - minY) / (maxY - minY)
+    end
+end
+
+-- A click on a map too large to hold something (the world, a continent)
+-- goes down to the map under it, at the same spot, until it reaches a
+-- zone that accept(mapID) takes. nil where nothing will.
+local MAP_ZONE = 3
+function ns.Descend(mapID, x, y, accept)
+    for _ = 1, 4 do
+        local info = C_Map.GetMapInfo(mapID)
+        local small = info and (info.mapType or MAP_ZONE) >= MAP_ZONE
+        if small and accept(mapID) then return mapID, x, y end
+        local ok, child = pcall(C_Map.GetMapInfoAtPosition, mapID, x, y)
+        if not (ok and child and child.mapID and child.mapID ~= mapID) then break end
+        local cx, cy = down(mapID, child.mapID, x, y)
+        if not cx then break end
+        mapID, x, y = child.mapID, cx, cy
+    end
+    if accept(mapID) then return mapID, x, y end
+end
+
 function ns.MapName(mapID)
     local info = mapID and C_Map.GetMapInfo(mapID)
     return info and info.name or "?"
@@ -179,6 +213,7 @@ function ns:Attach()
     if ns.Zoom then Core.safe(ns.Zoom.Attach, ns.Zoom, wm) end
     if ns.Terrain then Core.safe(ns.Terrain.Attach, ns.Terrain, wm) end
     if ns.Marker then Core.safe(ns.Marker.Attach, ns.Marker, wm) end
+    if ns.Pins then Core.safe(ns.Pins.Attach, ns.Pins, wm) end
 end
 
 -- The world map is part of the game's interface from the start on both
@@ -193,9 +228,11 @@ end)
 
 local HELP = {
     "/wmap  opens the options",
-    "/wmap 45.2 61.8  puts a marker at those coordinates in the zone you are in",
-    "/wmap clear  takes the marker away",
-    "Scroll the world map to move between the world, a continent and a zone. Right-click it to drop a marker.",
+    "/wmap pin Herbs  pins the spot you are standing on (the name is optional)",
+    "/wmap pins  lists your pins",
+    "/wmap 45.2 61.8  sets a waypoint at those coordinates in the zone you are in",
+    "/wmap clear  takes the waypoint away",
+    "Scroll the world map to move between the world, a continent and a zone. Right-click it for pins and waypoints.",
 }
 
 function ns:Command(msg)
@@ -206,8 +243,21 @@ function ns:Command(msg)
         for _, line in ipairs(HELP) do A:Print(line) end
         return
     end
+    local pinTitle = msg:match("^[Pp][Ii][Nn]%s*(.*)$")
+    if pinTitle and lower ~= "pins" then
+        ns.Pins:PinHere(Core.trim(pinTitle))
+        return
+    end
+    if lower == "pins" then
+        local list = ns.Pins:All()
+        if #list == 0 then A:Print("no pins yet. Right-click the world map, or /wmap pin where you stand.") return end
+        for _, p in ipairs(list) do
+            A:Print(("%s%s|r  %s  %.1f, %.1f"):format(Chrome:Esc("fel"), p.title or "Pin", ns.MapName(p.mapID), p.x * 100, p.y * 100))
+        end
+        return
+    end
     if lower == "clear" then
-        if ns.Marker:Has() then ns.Marker:Clear() else A:Print("no marker is down.") end
+        if ns.Marker:Has() then ns.Marker:Clear() else A:Print("no waypoint is set.") end
         return
     end
     local x, y = msg:match("^(%d+%.?%d*)[%s,]+(%d+%.?%d*)$")
@@ -246,12 +296,13 @@ function A:OnEnable()
             local line = ns.Marker:Describe()
             local c = Chrome.Colors.text
             if line then
-                tt:AddLine(line, c[1], c[2], c[3])
-            else
-                tt:AddLine("No marker. Right-click the world map to drop one.", 0.56, 0.53, 0.44)
+                tt:AddLine("Waypoint: " .. line, c[1], c[2], c[3])
             end
+            local n = #ns.Pins:All()
+            tt:AddLine(n == 0 and "No pins yet. Right-click the world map to add one."
+                or (n == 1 and "1 pin" or (n .. " pins")), 0.56, 0.53, 0.44)
             tt:AddLine(" ")
-            tt:AddLine("Left-click: options   Right-click: clear the marker", 0.5, 0.5, 0.5)
+            tt:AddLine("Left-click: options   Right-click: clear the waypoint", 0.5, 0.5, 0.5)
         end,
     })
 
@@ -276,16 +327,16 @@ function A:OnEnable()
             y = O:Note(page, "During a fight the wheel does what it always did. The map changes again once you are out of combat.", y)
         end
 
-        y = O:Heading(page, "Markers", y - 6)
-        y = check("Right-click the world map to drop a marker", "rightClick", y)
-        y = O:Note(page, "Right-click the marker again to take it away. Shift+right-click still goes up a level.", y)
+        y = O:Heading(page, "Pins and waypoints", y - 6)
+        y = check("Right-click the world map for pins and waypoints", "rightClick", y)
+        y = O:Note(page, "Add a pin to keep a place, with a name, a note and an icon, or set a waypoint to head there. Hover a pin to read it, left-click it to head there, right-click it to change it. Shift+right-click still goes up a level.", y)
+        y = check("Show pins on continent maps too", "continentPins", y, function() ns.Pins:Changed() end)
+        y = check("Show an arrow pointing to the waypoint", "arrow", y, function() ns.Marker:Refresh() end)
+        y = O:Note(page, "A small window with the direction and the distance in yards, named for the pin you are heading to. Drag it by its title; right-click it to clear the waypoint.", y)
+        y = check("Clear the waypoint when I reach it", "autoClear", y)
         if ns.Marker:Native() then
-            y = O:Note(page, "The game's own waypoint is used: it shows on the map, on the minimap and in the world, with the distance to it.", y)
-        else
-            y = check("Show an arrow pointing to the marker", "arrow", y, function() ns.Marker:Refresh() end)
-            y = O:Note(page, "A small window with the direction and the distance in yards. Drag it by its title; right-click it to clear the marker.", y)
-            y = check("Take the marker away when I reach it", "autoClear", y)
+            y = O:Note(page, "The waypoint is the game's own, so it also shows on the world map and the minimap.", y)
         end
-        y = O:Button(page, "Clear the marker", function() ns.Marker:Clear() end, y - 4, 150)
+        y = O:Button(page, "Clear the waypoint", function() ns.Marker:Clear() end, y - 4, 150)
     end)
 end

@@ -25,14 +25,21 @@ Part of the **[Wick suite](https://github.com/Wicks-mods/WickSuite)**: precision
   is all terrain, and the wheel keeps going, about as close as the
   minimap's closest zoom. It shows the ground as it is, explored or not,
   and can be turned off.
-- **Right-click to drop a marker.** Right-click the marker again to take
-  it away. Shift+right-click still goes up a level. A right-click on a
-  continent puts the marker in the zone under the cursor.
-- **On Forever, the game's own waypoint.** The marker shows on the map,
-  on the minimap and in the world, with the distance to it.
-- **On TBC, a pin and an arrow.** A pin on the map, and a small window
-  with an arrow and the distance in yards that clears the marker when you
-  arrive. The marker is kept between sessions.
+- **Pins of your own.** Right-click the world map and add a pin: a name
+  (it starts as the name of the place), an optional note, and one of the
+  eight raid marker icons. Pins are kept between sessions, on every
+  character, and show on their zone and, smaller, on the continent. Hover
+  one to read it, left-click it to head there, right-click it to change
+  or delete it. Shift+right-click still goes up a level.
+- **Head for a pin.** Left-click one and it becomes where you are
+  heading: it glows, and a small window with an arrow and the distance in
+  yards points the way and clears it when you arrive. Left-click it again
+  to stop; delete it and the heading goes with it.
+- **Or a waypoint anywhere.** The same menu sets a waypoint where you
+  clicked, with the same arrow. On Forever it is the game's own waypoint,
+  so it also shows on the world map and the minimap; on TBC it is a marker
+  of ours on the map. One place to head for at a time: a pin replaces a
+  waypoint and a waypoint replaces a pin.
 
 It uses the game's own world map, so quest, flight point and party
 markers all stay where they are. During a fight on Forever the wheel does
@@ -53,8 +60,10 @@ chat:
 | Command | Effect |
 |---|---|
 | `/wmap` | Open the options |
-| `/wmap 45.2 61.8` | A marker at those coordinates in the zone you are in |
-| `/wmap clear` | Take the marker away |
+| `/wmap pin Herbs` | Pin the spot you are standing on (the name is optional) |
+| `/wmap pins` | List your pins |
+| `/wmap 45.2 61.8` | A waypoint at those coordinates in the zone you are in |
+| `/wmap clear` | Take the waypoint away |
 
 `/wickmap` is the same command.
 

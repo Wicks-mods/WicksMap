@@ -22,11 +22,18 @@ The first release.
   closest zoom it is all terrain, and the wheel goes on past that step,
   about as close as the minimap's closest zoom; scrolling on once there
   leaves the view where it is. Can be turned off.
-- Right-click the world map to drop a marker, and right-click it again to
-  take it away. Shift+right-click still goes up a level.
-- On Forever the marker is the game's own tracked waypoint, shown on the
-  map, the minimap and in the world.
-- On TBC the marker is a pin on the map and a small window with an arrow
-  and the distance in yards, kept between sessions and cleared on arrival.
-- `/wmap x y` drops a marker at coordinates in the zone you are in;
+- Pins of your own: right-click the world map to add one with a name, a
+  note and a raid marker icon. Kept between sessions on every character,
+  shown on their zone and smaller on the continent. Hover to read one,
+  left-click to head there, right-click to change or delete it.
+  Shift+right-click still goes up a level.
+- Left-click a pin to head for it: it glows, and a small window with an
+  arrow and the distance in yards points the way, clearing on arrival.
+  Left-click again to stop; deleting the pin stops it too.
+- The same menu sets a waypoint anywhere, with the same arrow. On Forever
+  it is the game's own waypoint, also shown on the world map and the
+  minimap; on TBC a marker of ours on the map. One place to head for at a
+  time.
+- `/wmap pin [name]` pins where you stand and `/wmap pins` lists them;
+  `/wmap x y` sets a waypoint at coordinates in the zone you are in and
   `/wmap clear` takes it away.

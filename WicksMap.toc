@@ -1,6 +1,6 @@
 ## Interface: 20505, 20506, 16001
 ## Title: Wick's Map
-## Notes: Scroll the world map from the world to a continent to a zone, and right-click to drop a waypoint.
+## Notes: Scroll the world map from the world to a continent to a zone, and pin places of your own.
 ## Author: Wick
 ## Version: 0.1.0
 ## OptionalDeps: WickCore
@@ -15,3 +15,4 @@ Tiles.lua
 Zoom.lua
 Terrain.lua
 Marker.lua
+Pins.lua

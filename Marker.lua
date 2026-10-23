@@ -1,17 +1,16 @@
 -- Wick's Map
--- Marker.lua: right-click the world map to drop a marker.
+-- Marker.lua: the waypoint, one place to head for at a time.
 --
 -- Where the game has a waypoint of its own (Forever), the marker is that
--- waypoint, tracked, so the game draws it on the map, on the minimap and
--- in the world with the distance to it. Where it has none (TBC), or the
--- realm's rules switch it off, the marker is ours: a pin drawn over the
--- map and a small window with an arrow and the distance in yards, which
--- puts the marker away when you get there.
+-- waypoint, tracked, so the game draws it on the world map and the
+-- minimap. Where it has none (TBC), or the realm's rules switch it off,
+-- the marker is ours, a pin drawn over the map. Either way a small window
+-- with an arrow and the distance in yards points to it (the game draws no
+-- guide in the world on Forever, as it is set up) and puts the marker
+-- away when you get there.
 --
--- The right-click comes in through the map's canvas click handlers, the
--- place the map keeps for addons. Answering true there is what stops the
--- same click going up a level, as a right-click otherwise does. Shift
--- lets it through.
+-- It is set from the right-click menu on the world map and from a pin
+-- (Pins.lua), or with /wmap x y.
 
 local ADDON, ns = ...
 if not WickCore then return end
@@ -23,12 +22,9 @@ local Marker = {}
 ns.Marker = Marker
 
 local CIRCLE   = "Interface\\AddOns\\WickCore\\Media\\Textures\\mask-circle.png"
-local NEAR_PX  = 14    -- a right-click this close to the marker takes it away
+local NEAR_PX  = 14    -- a click this close to the marker counts as on it
 local ARRIVE   = 8     -- yards: close enough to count as there
 local TICK     = 0.1   -- how often the arrow updates
-
--- Enum.UIMapType: a marker goes on a zone or deeper where it can.
-local MAP_ZONE = 3
 
 local function sound(kind)
     local K = rawget(_G, "SOUNDKIT")
@@ -59,7 +55,16 @@ function Marker:Native()
 end
 
 -- The marker as map, x, y (fractions of that map), or nil.
+-- Heading for one of your pins: the pin is the destination, kept by us on
+-- every client, with no waypoint of the game's drawn on top of it.
+function Marker:PinID()
+    local m = ns.DB() and ns.DB().marker
+    return m and m.pin
+end
+
 function Marker:Get()
+    local m = ns.DB() and ns.DB().marker
+    if m and m.pin and m.mapID then return m.mapID, m.x, m.y end
     if self:Native() then
         if C_Map.HasUserWaypoint and not C_Map.HasUserWaypoint() then return nil end
         local p = C_Map.GetUserWaypoint()
@@ -69,7 +74,6 @@ function Marker:Get()
         end
         return nil
     end
-    local m = ns.DB() and ns.DB().marker
     if m and m.mapID then return m.mapID, m.x, m.y end
 end
 
@@ -80,7 +84,7 @@ function Marker:PosOn(mapID)
     local mm, mx, my = self:Get()
     if not mm then return nil end
     if mm == mapID then return mx, my end
-    if self:Native() and C_Map.GetUserWaypointPositionForMap then
+    if self:Native() and not self:PinID() and C_Map.GetUserWaypointPositionForMap then
         local ok, v = pcall(C_Map.GetUserWaypointPositionForMap, mapID)
         if ok and v then return v:GetXY() end
         return nil
@@ -104,46 +108,40 @@ local function accepts(mapID)
     return ns.WorldPos(mapID, 0.5, 0.5) ~= nil
 end
 
--- The same spot on a map one level down. The world map has no world
--- position of its own (it spans continents), so where that fails the
--- child's place on the parent says where the spot falls.
-local function down(mapID, childID, x, y)
-    local cont, pos = ns.WorldPos(mapID, x, y)
-    local cx, cy = ns.MapPos(cont, pos, childID)
-    if cx then return cx, cy end
-    local ok, minX, maxX, minY, maxY = pcall(C_Map.GetMapRectOnMap, childID, mapID)
-    if ok and minX and maxX > minX and maxY > minY then
-        return (x - minX) / (maxX - minX), (y - minY) / (maxY - minY)
-    end
-end
-
-local function resolve(mapID, x, y)
-    for _ = 1, 4 do
-        local info = C_Map.GetMapInfo(mapID)
-        local small = info and (info.mapType or MAP_ZONE) >= MAP_ZONE
-        if small and accepts(mapID) then return mapID, x, y end
-        local ok, child = pcall(C_Map.GetMapInfoAtPosition, mapID, x, y)
-        if not (ok and child and child.mapID and child.mapID ~= mapID) then break end
-        local cx, cy = down(mapID, child.mapID, x, y)
-        if not cx then break end
-        mapID, x, y = child.mapID, cx, cy
-    end
-    if accepts(mapID) then return mapID, x, y end
-end
-
-function Marker:Set(mapID, x, y)
-    local m, mx, my = resolve(mapID, x, y)
+-- label: what the arrow window calls the place (a pin's name), or nil
+-- for the name of the map.
+function Marker:Set(mapID, x, y, label)
+    local m, mx, my = ns.Descend(mapID, x, y, accepts)
     if not m then
-        ns.A:Print(("a marker cannot go there on %s. Zoom in to a zone and try again."):format(ns.MapName(mapID)))
+        ns.A:Print(("a waypoint cannot go there on %s. Zoom in to a zone and try again."):format(ns.MapName(mapID)))
         return false
     end
+    -- One place to head for at a time: this replaces a pin being headed for.
     if self:Native() then
+        ns.DB().marker = nil
         C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(m, mx, my))
         C_SuperTrack.SetSuperTrackedUserWaypoint(true)
     else
-        ns.DB().marker = { mapID = m, x = mx, y = my }
-        ns.Dirty()
+        ns.DB().marker = { mapID = m, x = mx, y = my, label = label }
     end
+    ns.Dirty()
+    self.label = label
+    self.arrowClosed = nil
+    sound("place")
+    self:Refresh()
+    return true
+end
+
+-- Head for one of your pins. It replaces any waypoint, the game's too, so
+-- there is one place to head for and nothing drawn over the pin.
+function Marker:HeadToPin(p)
+    if self:Native() and C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() then
+        C_Map.ClearUserWaypoint()
+        C_SuperTrack.SetSuperTrackedUserWaypoint(false)
+    end
+    ns.DB().marker = { mapID = p.mapID, x = p.x, y = p.y, label = p.title, pin = p.id }
+    ns.Dirty()
+    self.label = nil
     self.arrowClosed = nil
     sound("place")
     self:Refresh()
@@ -160,6 +158,7 @@ function Marker:Clear()
         db.marker = nil
         ns.Dirty()
     end
+    self.label = nil
     sound("clear")
     self:Refresh()
 end
@@ -175,21 +174,6 @@ function Marker:IsNear(mapID, x, y)
     return dx * dx + dy * dy <= NEAR_PX * NEAR_PX
 end
 
--- The canvas click handler. true stops the game handling the click.
-local function onCanvasClick(map, button, x, y)
-    if button ~= "RightButton" then return false end
-    local db = ns.DB()
-    if not (db and db.rightClick) or IsShiftKeyDown() then return false end
-    local mapID = map and map.GetMapID and map:GetMapID()
-    if not (mapID and x and y) then return false end
-    if Marker:IsNear(mapID, x, y) then
-        Marker:Clear()
-    else
-        Marker:Set(mapID, x, y)
-    end
-    return true
-end
-Marker.OnCanvasClick = onCanvasClick
 
 -- ============================================================
 -- Our own marker: distance and direction
@@ -250,15 +234,21 @@ local function yards(d)
     return ("%d yd"):format(math.floor(d + 0.5))
 end
 
+-- What the waypoint is called, when it was set for a pin.
+function Marker:Label()
+    if not self:Has() then return nil end
+    local m = ns.DB().marker
+    if m then return m.label end
+    return self.label
+end
+
 -- One line for tooltips: where, and how far.
 function Marker:Describe()
     local mm, mx, my = self:Get()
     if not mm then return nil end
-    local s = ("%s  %.1f, %.1f"):format(ns.MapName(mm), mx * 100, my * 100)
-    if not self:Native() then
-        local d = self:Bearing()
-        if d then s = s .. "  (" .. yards(d) .. ")" end
-    end
+    local s = ("%s  %.1f, %.1f"):format(self:Label() or ns.MapName(mm), mx * 100, my * 100)
+    local d = self:Bearing()
+    if d then s = s .. "  (" .. yards(d) .. ")" end
     return s
 end
 
@@ -404,7 +394,7 @@ function Marker:UpdateArrow()
     if not f then return end
     local mm = self:Get()
     if not mm then self:Refresh() return end
-    f.where:SetText(ns.MapName(mm))
+    f.where:SetText(self:Label() or ns.MapName(mm))
     local d, bearing = self:Bearing()
     if not d then
         f.dist:SetText(bearing == "elsewhere" and "Another continent" or "Unknown")
@@ -414,7 +404,7 @@ function Marker:UpdateArrow()
     end
     local db = ns.DB()
     if d <= ARRIVE and db.autoClear then
-        ns.A:Print("you reached your marker.")
+        ns.A:Print("you reached your waypoint.")
         self:Clear()
         return
     end
@@ -436,11 +426,16 @@ end
 function Marker:Refresh()
     self.pinMap = nil
     local has, native = self:Has(), self:Native()
+    -- Our marker shows for a spot of our own; the game draws its waypoint,
+    -- and a pin being headed for glows instead.
     if self.layer then
-        self.layer:SetShown(has and not native)
+        self.layer:SetShown(has and not native and not self:PinID())
     end
+    if ns.Pins then ns.Pins:Changed() end
     local db = ns.DB()
-    local wantArrow = has and not native and db and db.arrow and not self.arrowClosed
+    -- The arrow for every waypoint, the game's own too: the game may draw
+    -- no guide to it in the world (Forever does not, as it is set up).
+    local wantArrow = has and db and db.arrow and not self.arrowClosed
     if wantArrow then
         self:ArrowWindow():Show()
         self:UpdateArrow()
@@ -454,6 +449,9 @@ end
 -- At login: a marker of ours from last time comes back. A game waypoint
 -- left over on a client that has one stays the game's.
 function Marker:Restore()
+    -- Heading for a pin that has gone since (deleted on another character).
+    local id = self:PinID()
+    if id and ns.Pins and not ns.Pins:Get(id) then ns.DB().marker = nil end
     self:Refresh()
 end
 
@@ -461,14 +459,17 @@ function Marker:Attach(wm)
     if self.attached then return end
     self.attached = true
     self:PinLayer(wm)
-    if wm.AddCanvasClickHandler then
-        -- Above the game's own handlers, so a right-click reaches us first.
-        wm:AddCanvasClickHandler(onCanvasClick, 100)
-    end
     -- The game's waypoint can change without us (its own map pin button,
     -- a shared waypoint link).
     if C_Map.SetUserWaypoint then
-        ns.A:On("USER_WAYPOINT_UPDATED", function() Marker:Refresh() end)
+        ns.A:On("USER_WAYPOINT_UPDATED", function()
+            -- A waypoint the game set (its own map pin button, a shared
+            -- link) is the newest place to head for.
+            if C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() and Marker:PinID() then
+                ns.DB().marker = nil
+            end
+            Marker:Refresh()
+        end)
     end
     self:Refresh()
 end
