@@ -1,3 +1,5 @@
+<p align="center"><img src="images/wick-thumb-map-2x.png" alt="Wick's Map" width="460"></p>
+
 # Wick's Map
 
 > Scroll the world map from the world to a continent to a zone, and right-click to drop a waypoint. TBC Classic Anniversary and Forever.
