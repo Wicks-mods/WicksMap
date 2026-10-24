@@ -34,6 +34,5 @@ The first release.
   it is the game's own waypoint, also shown on the world map and the
   minimap; on TBC a marker of ours on the map. One place to head for at a
   time.
-- `/wmap pin [name]` pins where you stand and `/wmap pins` lists them;
-  `/wmap x y` sets a waypoint at coordinates in the zone you are in and
-  `/wmap clear` takes it away.
+- From chat you can pin the spot you are standing on, list your pins, or
+  set a waypoint by its coordinates. The README lists the commands.
